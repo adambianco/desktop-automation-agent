@@ -1,0 +1,64 @@
+# ERP Data Entry Workflow — Sample Configuration
+# Copy and adapt this file for your specific ERP application.
+
+# ---- Platform Settings ----
+display: ":0"                    # Use ":99" for headless/Xvfb, ":0" for real display
+typing_interval: 0.03            # Seconds between keystrokes (increase for slower systems)
+move_duration: 0.2               # Mouse movement duration in seconds
+vision_threshold: 0.85           # Default template match confidence threshold [0.0-1.0]
+default_timeout: 30.0            # Default wait timeout in seconds
+poll_interval: 0.5               # How often to poll for UI elements (seconds)
+monitor_index: 1                 # 1 = primary monitor
+
+# ---- Application Settings ----
+# app_path: "/usr/bin/my_erp_app"  # Uncomment to launch the app automatically
+app_window_title: "My ERP System"
+app_launch_delay: 3.0            # Seconds to wait after launching the app
+app_ready_timeout: 30.0          # Seconds to wait for the app to be ready
+
+# ---- Workflow Settings ----
+entry_mode: "tab"                # "tab" | "template" | "ocr"
+max_retries: 2                   # Max retries per row on failure
+inter_row_delay: 0.5             # Seconds to wait between rows
+save_on_teardown: true           # Press Ctrl+S when workflow finishes
+close_on_teardown: false         # Close the app when workflow finishes
+
+# ---- Field Navigation (tab mode) ----
+# Define the order of fields as they appear in Tab order in the ERP form.
+field_order:
+  - invoice_number
+  - vendor_name
+  - invoice_date
+  - amount
+  - description
+  - cost_center
+  - purchase_order
+
+# ---- Keyboard Shortcuts ----
+new_record_shortcut: "ctrl+n"    # Shortcut to create a new record
+save_shortcut: "ctrl+s"          # Shortcut to save a record
+save_timeout: 10.0               # Seconds to wait for save confirmation
+
+# ---- Template Images (template mode) ----
+# Uncomment and set paths to template images for button/field detection.
+# Capture these using a screenshot tool on your target system.
+#
+# new_record_template: "templates/erp/new_record_btn.png"
+# save_template: "templates/erp/save_btn.png"
+# success_indicator_template: "templates/erp/save_success.png"
+# error_dialog_template: "templates/erp/error_dialog.png"
+# first_field_template: "templates/erp/invoice_number_field.png"
+
+# ---- OCR Field Labels (ocr mode) ----
+# The text labels that appear next to each input field in the ERP form.
+field_labels:
+  invoice_number: "Invoice Number"
+  vendor_name: "Vendor"
+  invoice_date: "Date"
+  amount: "Amount"
+  description: "Description"
+  cost_center: "Cost Center"
+  purchase_order: "PO Number"
+
+# How many pixels to the right of the label to click (to hit the input field)
+label_click_offset_x: 150

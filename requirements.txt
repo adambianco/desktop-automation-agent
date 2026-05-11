@@ -1,0 +1,26 @@
+# Desktop Automation Agent — Python Dependencies
+# Install with: pip install -r requirements.txt  (or run install.bat)
+
+# Screen capture and input control
+pyautogui>=0.9.54
+mss>=9.0.0
+
+# Computer vision (template matching)
+opencv-python-headless>=4.8.0
+
+# OCR text detection (optional — only needed for OCR mode)
+# pytesseract>=0.3.10
+
+# Data handling
+pandas>=2.0.0
+openpyxl>=3.1.0
+pyperclip>=1.8.0
+
+# Workflow engine
+python-statemachine>=2.0.0
+
+# Configuration
+pyyaml>=6.0
+
+# Utilities
+pillow>=9.0.0
