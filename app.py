@@ -655,6 +655,57 @@ class DesktopAgentApp:
         self.wf_stop_btn.configure(state="disabled")
 
     # ── Macro Events ──────────────────────────────────────────────────────────
+    def _show_countdown(self, seconds: int, on_done: callable):
+        """
+        Show a large floating countdown overlay (3… 2… 1…) then call on_done.
+        The overlay is always-on-top so it's visible over any application.
+        """
+        overlay = tk.Toplevel(self.root)
+        overlay.overrideredirect(True)          # No title bar
+        overlay.attributes("-topmost", True)    # Always on top
+        overlay.attributes("-alpha", 0.88)      # Slightly transparent
+        overlay.configure(bg="#0a0e1a")
+
+        # Centre on screen
+        sw = overlay.winfo_screenwidth()
+        sh = overlay.winfo_screenheight()
+        w, h = 220, 220
+        overlay.geometry(f"{w}x{h}+{(sw - w)//2}+{(sh - h)//2}")
+
+        # Border frame
+        border = tk.Frame(overlay, bg=RECORD_RED, padx=3, pady=3)
+        border.pack(fill="both", expand=True)
+        inner = tk.Frame(border, bg="#0a0e1a")
+        inner.pack(fill="both", expand=True)
+
+        tk.Label(inner, text="Starting in",
+                 font=("Segoe UI", 12), fg=TEXT_DIM, bg="#0a0e1a").pack(pady=(24, 0))
+
+        count_var = tk.StringVar(value=str(seconds))
+        count_label = tk.Label(inner, textvariable=count_var,
+                               font=("JetBrains Mono", 72, "bold") if False else ("Consolas", 72, "bold"),
+                               fg=RECORD_RED, bg="#0a0e1a")
+        count_label.pack()
+
+        tk.Label(inner, text="Switch to your app now",
+                 font=("Segoe UI", 10), fg=TEXT_DIM, bg="#0a0e1a").pack(pady=(0, 16))
+
+        remaining = [seconds]
+
+        def tick():
+            remaining[0] -= 1
+            if remaining[0] > 0:
+                count_var.set(str(remaining[0]))
+                # Flash red → white on each tick
+                count_label.configure(fg="#ffffff")
+                overlay.after(150, lambda: count_label.configure(fg=RECORD_RED))
+                overlay.after(1000, tick)
+            else:
+                overlay.destroy()
+                on_done()
+
+        overlay.after(1000, tick)
+
     def _start_recording(self):
         try:
             from macro_recorder import MacroRecorder
@@ -662,19 +713,29 @@ class DesktopAgentApp:
             messagebox.showerror("Error", "pynput is required for recording.\nRun install.bat first.")
             return
 
-        self._recorder = MacroRecorder(
-            record_mouse_move=True,
-            mouse_move_throttle_ms=80,
-            on_event=self._on_macro_event
-        )
-        self._recorder.start()
-        self._recording = True
+        # Update UI to show countdown state
         self.record_btn.configure(state="disabled")
-        self.stop_rec_btn.configure(state="normal", bg=RECORD_RED)
-        self.rec_status_var.set("● RECORDING — perform your task now")
-        self.rec_status_label.configure(fg="#ff5555")
-        self._macro_log_append("Recording started — perform your task...", "info")
-        self._set_status("Recording macro…")
+        self.stop_rec_btn.configure(state="disabled")
+        self.rec_status_var.set("Starting in 3 seconds — switch to your app")
+        self.rec_status_label.configure(fg="#f59e0b")
+        self._set_status("Countdown…")
+
+        def _begin_recording():
+            self._recorder = MacroRecorder(
+                record_mouse_move=True,
+                mouse_move_throttle_ms=80,
+                on_event=self._on_macro_event
+            )
+            self._recorder.start()
+            self._recording = True
+            self.stop_rec_btn.configure(state="normal", bg=RECORD_RED)
+            self.rec_status_var.set("● RECORDING — perform your task now")
+            self.rec_status_label.configure(fg="#ff5555")
+            self._macro_log_append("Recording started — perform your task...", "info")
+            self._set_status("Recording macro…")
+            self.root.title("Desktop Automation Agent  ●  RECORDING (F10 to stop)")
+
+        self._show_countdown(3, _begin_recording)
 
     def _stop_recording(self):
         if not self._recorder:
@@ -907,11 +968,9 @@ class DesktopAgentApp:
 
     def _hotkey_start_recording(self):
         """Called from main thread when F9 is pressed."""
-        # Switch to macro tab so user can see what's happening
+        # Switch to macro tab so user can see the countdown
         self._switch_tab("macro")
         self._start_recording()
-        # Flash the window title to confirm
-        self.root.title("Desktop Automation Agent  ●  RECORDING (F10 to stop)")
 
     def _hotkey_stop_recording(self):
         """Called from main thread when F10 is pressed."""
