@@ -422,10 +422,10 @@ class DesktopAgentApp:
         self.stop_play_btn.pack(fill="x")
         self.stop_play_btn.configure(state="disabled")
 
-        # ── Right: macro log ──
+        # ── Right: hotkey reference + macro log ──
         right = tk.Frame(panel, bg=DARK_BG)
         right.grid(row=0, column=1, sticky="nsew")
-        right.grid_rowconfigure(1, weight=1)
+        right.grid_rowconfigure(2, weight=1)
         right.grid_columnconfigure(0, weight=1)
 
         header = tk.Frame(right, bg=ACCENT, pady=10, padx=20)
@@ -434,8 +434,47 @@ class DesktopAgentApp:
                  fg=TEXT_PRIMARY, bg=ACCENT).pack(side="left")
         self._btn(header, "Clear", self._clear_macro_log, small=True).pack(side="right")
 
+        # ── Hotkey Reference Card ──
+        hotkey_card = tk.Frame(right, bg="#0f1a2e", pady=0)
+        hotkey_card.grid(row=1, column=0, sticky="ew", padx=8, pady=(8, 0))
+
+        # Title row
+        title_row = tk.Frame(hotkey_card, bg="#0f1a2e")
+        title_row.pack(fill="x", padx=14, pady=(10, 6))
+        tk.Label(title_row, text="⌨  Keyboard Shortcuts",
+                 font=("Segoe UI", 9, "bold"), fg="#60a5fa", bg="#0f1a2e").pack(side="left")
+        tk.Label(title_row, text="Work even when app is minimised",
+                 font=("Segoe UI", 8), fg="#475569", bg="#0f1a2e").pack(side="right")
+
+        # Hotkey rows
+        hotkeys = [
+            ("F9",          "Start Recording",   RECORD_RED,  "⏺"),
+            ("F10",         "Stop Recording",    "#555",      "⏹"),
+            ("F5",          "Play Macro",         SUCCESS,     "▶"),
+            ("F6",          "Stop Playback",      ERROR_COL,   "■"),
+            ("Esc (corner)","Emergency Stop",     "#f59e0b",   "⚠"),
+        ]
+        keys_frame = tk.Frame(hotkey_card, bg="#0f1a2e")
+        keys_frame.pack(fill="x", padx=14, pady=(0, 10))
+
+        for i, (key, action, color, icon) in enumerate(hotkeys):
+            row_bg = "#0d1525" if i % 2 == 0 else "#0f1a2e"
+            row = tk.Frame(keys_frame, bg=row_bg)
+            row.pack(fill="x", pady=1)
+            # Key badge
+            tk.Label(row, text=key,
+                     font=("Consolas", 9, "bold"),
+                     fg=color, bg="#1a2744",
+                     padx=8, pady=3, width=14, anchor="center",
+                     relief="flat").pack(side="left", padx=(4, 8), pady=2)
+            # Icon + action
+            tk.Label(row, text=f"{icon}  {action}",
+                     font=("Segoe UI", 9),
+                     fg=TEXT_PRIMARY, bg=row_bg,
+                     anchor="w").pack(side="left", fill="x", expand=True, pady=2)
+
         macro_log_frame = tk.Frame(right, bg=LOG_BG)
-        macro_log_frame.grid(row=1, column=0, sticky="nsew", padx=8, pady=8)
+        macro_log_frame.grid(row=2, column=0, sticky="nsew", padx=8, pady=8)
         macro_log_frame.grid_rowconfigure(0, weight=1)
         macro_log_frame.grid_columnconfigure(0, weight=1)
 
@@ -848,13 +887,17 @@ class DesktopAgentApp:
         def on_press(key):
             try:
                 if key == kb.Key.f9:
-                    # F9: start recording (if not already recording)
                     if not self._recording:
                         self.root.after(0, self._hotkey_start_recording)
                 elif key == kb.Key.f10:
-                    # F10: stop recording (if recording)
                     if self._recording:
                         self.root.after(0, self._hotkey_stop_recording)
+                elif key == kb.Key.f5:
+                    # F5: play macro
+                    self.root.after(0, self._hotkey_play)
+                elif key == kb.Key.f6:
+                    # F6: stop playback
+                    self.root.after(0, self._hotkey_stop_play)
             except Exception:
                 pass
 
@@ -874,6 +917,15 @@ class DesktopAgentApp:
         """Called from main thread when F10 is pressed."""
         self._stop_recording()
         self.root.title("Desktop Automation Agent")
+
+    def _hotkey_play(self):
+        """Called from main thread when F5 is pressed."""
+        self._switch_tab("macro")
+        self._play_macro()
+
+    def _hotkey_stop_play(self):
+        """Called from main thread when F6 is pressed."""
+        self._stop_playback()
 
     # ── Close ─────────────────────────────────────────────────────────────────
     def _on_close(self):
