@@ -85,6 +85,7 @@ class DesktopAgentApp:
         self._discover_workflows()
         self._build_ui()
         self.root.after(100, self._poll_log_queue)
+        self.root.after(500, self._start_hotkey_listener)  # Start after UI ready
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.mainloop()
 
@@ -335,8 +336,11 @@ class DesktopAgentApp:
 
         # Record section
         self._section_label(left, "RECORD A MACRO")
-        tk.Label(left, text="1. Click Record\n2. Perform your task on screen\n3. Click Stop when done",
+        tk.Label(left, text="1. Press F9 (or click Record)\n2. Perform your task on screen\n3. Press F10 (or click Stop)",
                  font=("Segoe UI", 9), fg=TEXT_DIM, bg=PANEL_BG,
+                 justify="left", padx=16).pack(anchor="w", pady=(0, 4))
+        tk.Label(left, text="F9 works even when this window is in the background",
+                 font=("Segoe UI", 8), fg="#4ade80", bg=PANEL_BG,
                  justify="left", padx=16).pack(anchor="w", pady=(0, 8))
 
         rec_frame = tk.Frame(left, bg=PANEL_BG)
@@ -827,8 +831,58 @@ class DesktopAgentApp:
     def _set_status(self, message):
         self.status_var.set(message)
 
+    # ── Global Hotkeys ─────────────────────────────────────────────────────────
+    def _start_hotkey_listener(self):
+        """
+        Start a global keyboard listener for F9 (record) and F10 (stop).
+        Runs in a daemon thread — works even when the app window is in the background.
+        """
+        try:
+            from pynput import keyboard as kb
+        except ImportError:
+            logging.warning("pynput not available — global hotkeys disabled")
+            return
+
+        self._hotkey_listener = None
+
+        def on_press(key):
+            try:
+                if key == kb.Key.f9:
+                    # F9: start recording (if not already recording)
+                    if not self._recording:
+                        self.root.after(0, self._hotkey_start_recording)
+                elif key == kb.Key.f10:
+                    # F10: stop recording (if recording)
+                    if self._recording:
+                        self.root.after(0, self._hotkey_stop_recording)
+            except Exception:
+                pass
+
+        self._hotkey_listener = kb.Listener(on_press=on_press, daemon=True)
+        self._hotkey_listener.start()
+        logging.info("Global hotkeys active: F9 = Start Recording, F10 = Stop Recording")
+
+    def _hotkey_start_recording(self):
+        """Called from main thread when F9 is pressed."""
+        # Switch to macro tab so user can see what's happening
+        self._switch_tab("macro")
+        self._start_recording()
+        # Flash the window title to confirm
+        self.root.title("Desktop Automation Agent  ●  RECORDING (F10 to stop)")
+
+    def _hotkey_stop_recording(self):
+        """Called from main thread when F10 is pressed."""
+        self._stop_recording()
+        self.root.title("Desktop Automation Agent")
+
     # ── Close ─────────────────────────────────────────────────────────────────
     def _on_close(self):
+        # Stop global hotkey listener
+        if hasattr(self, '_hotkey_listener') and self._hotkey_listener:
+            try:
+                self._hotkey_listener.stop()
+            except Exception:
+                pass
         if self._recording:
             if not messagebox.askyesno("Quit", "Recording in progress. Stop and quit?"):
                 return
