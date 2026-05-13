@@ -809,17 +809,20 @@ class DesktopAgentApp:
         overlay.after(1000, tick)
 
     def _start_recording(self):
-        # Guard: don't record while a workflow is running (they share mouse/keyboard)
+        """
+        Start recording by launching recorder_worker.py as a SEPARATE PROCESS.
+        pynput never runs inside the tkinter process — no shared message loop,
+        no freeze possible.
+        """
         if self._wf_run_thread and self._wf_run_thread.is_alive():
-            messagebox.showwarning(
-                "Workflow Running",
-                "Please stop the running workflow before starting a macro recording."
-            )
+            messagebox.showwarning("Workflow Running",
+                "Please stop the running workflow before recording.")
             return
-        try:
-            from macro_recorder import MacroRecorder
-        except ImportError:
-            messagebox.showerror("Error", "pynput is required for recording.\nRun install.bat first.")
+
+        import tempfile, subprocess, sys
+        worker = os.path.join(os.path.dirname(__file__), "recorder_worker.py")
+        if not os.path.exists(worker):
+            messagebox.showerror("Error", "recorder_worker.py not found.\nRe-extract the zip.")
             return
 
         # Update UI to show countdown state
@@ -830,12 +833,63 @@ class DesktopAgentApp:
         self._set_status("Countdown…")
 
         def _begin_recording():
-            self._recorder = MacroRecorder(
-                record_mouse_move=True,
-                mouse_move_throttle_ms=100,  # Throttle moves to max 10/sec
-                on_event=self._on_macro_event
+            # Temp files for IPC
+            tmp = tempfile.gettempdir()
+            self._rec_output_file = os.path.join(tmp, "da_macro_events.json")
+            self._rec_stop_signal  = os.path.join(tmp, "da_macro_stop.signal")
+
+            # Clean up any leftover files
+            for f in [self._rec_output_file, self._rec_stop_signal]:
+                try: os.remove(f)
+                except: pass
+
+            # Launch recorder in its own process
+            # stderr=DEVNULL suppresses Xlib warnings at the OS level
+            python_exe = sys.executable
+            self._rec_process = subprocess.Popen(
+                [python_exe, worker,
+                 self._rec_output_file,
+                 self._rec_stop_signal,
+                 "80"],   # throttle_ms
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True
             )
-            self._recorder.start()
+
+            # Wait for READY signal (non-blocking poll)
+            self._rec_ready = False
+            self._poll_recorder_ready()
+
+        self._show_countdown(3, _begin_recording)
+
+    def _poll_recorder_ready(self):
+        """
+        Read lines from the worker stdout in a background thread.
+        Skip any warning lines and wait for 'READY'.
+        """
+        if not hasattr(self, '_rec_process') or self._rec_process is None:
+            return
+
+        # Start a background thread to read lines and find READY
+        if not hasattr(self, '_rec_ready_found'):
+            self._rec_ready_found = threading.Event()
+
+            def _read_until_ready():
+                try:
+                    for line in self._rec_process.stdout:
+                        line = line.strip()
+                        if line == "READY":
+                            self._rec_ready_found.set()
+                            return
+                        # Skip warning/info lines and keep reading
+                except Exception:
+                    pass
+                self._rec_ready_found.set()  # Unblock even on error
+
+            threading.Thread(target=_read_until_ready, daemon=True).start()
+
+        if self._rec_ready_found.is_set():
+            del self._rec_ready_found
             self._recording = True
             self.stop_rec_btn.configure(state="normal", bg=RECORD_RED)
             self.rec_status_var.set("● RECORDING — perform your task now")
@@ -843,38 +897,86 @@ class DesktopAgentApp:
             self._macro_log_append("Recording started — perform your task...", "info")
             self._set_status("Recording macro…")
             self.root.title("Desktop Automation Agent  ●  RECORDING (F10 to stop)")
-            self._show_recording_indicator()  # Show floating red dot
+            self._show_recording_indicator()
+            self._poll_recorder_events()
+        else:
+            self.root.after(150, self._poll_recorder_ready)
 
-        self._show_countdown(3, _begin_recording)
+    def _poll_recorder_events(self):
+        """Poll the output file every 300ms to update the live event count."""
+        if not self._recording:
+            return
+        try:
+            if os.path.exists(self._rec_output_file):
+                import json as _json
+                with open(self._rec_output_file) as f:
+                    data = _json.load(f)
+                count = len(data)
+                self.rec_status_var.set(f"● RECORDING — {count} events")
+                if hasattr(self, '_ind_count_var'):
+                    self._ind_count_var.set(f"{count} events")
+        except Exception:
+            pass
+        self.root.after(300, self._poll_recorder_events)
 
     def _stop_recording(self):
-        if not self._recorder:
+        """
+        Stop recording by writing the stop-signal file.
+        The worker process sees it, stops pynput, writes final events, and exits.
+        The GUI reads the events file. NO pynput in this process = NO freeze.
+        """
+        if not self._recording:
             return
-
-        # Signal stop — returns immediately, listener cleanup happens in background thread
-        events = self._recorder.stop()
         self._recording = False
-        count = len(events)
 
-        # Defer ALL UI updates to the next event loop tick via after()
-        # This ensures nothing blocks even if tkinter is mid-render
-        def _update_ui():
+        # Write stop signal — instant, never blocks
+        try:
+            with open(self._rec_stop_signal, "w") as f:
+                f.write("stop")
+        except Exception as e:
+            logging.error("Could not write stop signal: %s", e)
+
+        # Update UI immediately
+        self.record_btn.configure(state="normal")
+        self.stop_rec_btn.configure(state="disabled", bg="#555")
+        self.rec_status_var.set("Stopping…")
+        self._set_status("Stopping recording…")
+        self._hide_recording_indicator()
+        self.root.title("Desktop Automation Agent")
+
+        # Wait for worker to finish and read events (in background thread)
+        def _finish():
+            import json as _json, time as _time
+            # Wait up to 3s for the worker to write the final file
+            deadline = _time.time() + 3.0
+            while _time.time() < deadline:
+                if hasattr(self, '_rec_process') and self._rec_process.poll() is not None:
+                    break
+                _time.sleep(0.1)
+
+            events = []
             try:
-                self.record_btn.configure(state="normal")
-                self.stop_rec_btn.configure(state="disabled", bg="#555")
+                if os.path.exists(self._rec_output_file):
+                    with open(self._rec_output_file) as f:
+                        events = _json.load(f)
+            except Exception:
+                pass
+
+            # Store events so Save Macro can access them
+            self._last_recorded_events = events
+            count = len(events)
+
+            def _update():
                 self.rec_status_var.set(f"✓ Recorded {count} events — save it below")
                 self.rec_status_label.configure(fg=TEXT_DIM)
                 self._macro_log_append(f"Recording stopped — {count} events captured", "success")
                 self._set_status(f"Recorded {count} events")
-                self._hide_recording_indicator()
-                self.root.title("Desktop Automation Agent")
                 if count > 0:
                     self.play_btn.configure(state="normal")
-            except Exception as e:
-                import logging
-                logging.error("_stop_recording UI update error: %s", e)
+            self.root.after(0, _update)
 
-        self.root.after(0, _update_ui)
+        import threading
+        threading.Thread(target=_finish, daemon=True).start()
 
     def _on_macro_event(self, event):
         """
@@ -900,14 +1002,28 @@ class DesktopAgentApp:
             self.root.after(0, lambda c=count: self.rec_status_var.set(f"● RECORDING — {c} events"))
 
     def _save_macro(self):
-        if not self._recorder or not self._recorder._events:
+        events = getattr(self, '_last_recorded_events', None)
+        if not events:
             messagebox.showwarning("Nothing to save", "Record a macro first.")
             return
         name = self.macro_name_var.get().strip()
         if not name:
             messagebox.showwarning("Name required", "Enter a name for the macro.")
             return
-        path = self._recorder.save(name)
+        import json as _json, time as _time
+        from macro_recorder import MacroRecorder
+        os.makedirs(MacroRecorder.MACROS_DIR, exist_ok=True)
+        safe_name = name.strip().replace(" ", "_").replace("/", "_")
+        path = os.path.join(MacroRecorder.MACROS_DIR, f"{safe_name}.json")
+        data = {
+            "name": name, "version": "1.0",
+            "recorded_at": _time.strftime("%Y-%m-%d %H:%M:%S"),
+            "event_count": len(events),
+            "duration_seconds": events[-1]["time"] if events else 0,
+            "events": events
+        }
+        with open(path, "w") as f:
+            _json.dump(data, f, indent=2)
         self._macro_log_append(f"Macro saved: {os.path.basename(path)}", "success")
         self._set_status(f"Macro saved: {name}")
         self._refresh_macro_list()
@@ -965,10 +1081,10 @@ class DesktopAgentApp:
         self.loop_count_var.set("" if not looping else "Loop mode active — press F6 to stop")
 
     def _play_macro(self):
-        # Use current_macro if loaded, else use recorder's events
+        # Use current_macro if loaded, else use last recorded events
         macro_data = self._current_macro
-        if macro_data is None and self._recorder and self._recorder._events:
-            macro_data = {"name": "unsaved", "events": self._recorder._events}
+        if macro_data is None and getattr(self, '_last_recorded_events', None):
+            macro_data = {"name": "unsaved", "events": self._last_recorded_events}
         if not macro_data:
             messagebox.showwarning("No macro", "Record or load a macro first.")
             return
