@@ -394,7 +394,7 @@ class DesktopAgentApp:
         tk.Label(speed_row, text="Speed:", font=("Segoe UI", 9),
                  fg=TEXT_DIM, bg=PANEL_BG, width=10, anchor="w").pack(side="left")
         self.speed_var = tk.StringVar(value="1.0")
-        speed_options = ["0.25", "0.5", "0.75", "1.0", "1.5", "2.0", "3.0"]
+        speed_options = ["0.25", "0.5", "0.75", "1.0", "1.5", "2.0", "3.0", "5.0", "10.0", "20.0", "50.0"]
         ttk.Combobox(speed_row, textvariable=self.speed_var, values=speed_options,
                      state="readonly", font=("Segoe UI", 9), width=8).pack(side="left")
         tk.Label(speed_row, text="x", font=("Segoe UI", 9),
