@@ -207,76 +207,107 @@ class DesktopAgentApp:
     # ── Workflow Panel ────────────────────────────────────────────────────────
     def _build_workflow_panel(self, parent):
         panel = tk.Frame(parent, bg=DARK_BG)
-        panel.grid_columnconfigure(0, weight=0, minsize=310)
+        panel.grid_columnconfigure(0, weight=0, minsize=350)
         panel.grid_columnconfigure(1, weight=1)
         panel.grid_rowconfigure(0, weight=1)
 
-        # Sidebar
-        sidebar = tk.Frame(panel, bg=PANEL_BG, width=310)
+        # ── Left sidebar: 3-step setup ──
+        sidebar = tk.Frame(panel, bg=PANEL_BG, width=350)
         sidebar.grid(row=0, column=0, sticky="nsew")
         sidebar.grid_propagate(False)
 
-        pad = {"padx": 16, "pady": 4}
+        # ─────────────────────────────────────────────────────────────────
+        # STEP 1 — Open Spreadsheet
+        # ─────────────────────────────────────────────────────────────────
+        self._step_header(sidebar, "1", "Open Your Spreadsheet")
 
-        self._section_label(sidebar, "WORKFLOW")
-        workflow_names = list(self._workflow_registry.keys()) or ["(no workflows found)"]
-        self.workflow_var = tk.StringVar(value=workflow_names[0])
-        wf_menu = ttk.Combobox(sidebar, textvariable=self.workflow_var,
-                                values=workflow_names, state="readonly",
-                                font=("Segoe UI", 10))
-        wf_menu.pack(fill="x", **pad)
-        wf_menu.bind("<<ComboboxSelected>>", lambda e: self._on_workflow_change())
-
-        self.workflow_desc = tk.Label(sidebar, text="", wraplength=270,
-                                      font=("Segoe UI", 9), fg=TEXT_DIM,
-                                      bg=PANEL_BG, justify="left")
-        self.workflow_desc.pack(fill="x", padx=16, pady=(0, 8))
-
-        self._section_label(sidebar, "DATA FILE  (.xlsx / .csv)")
         file_frame = tk.Frame(sidebar, bg=PANEL_BG)
-        file_frame.pack(fill="x", **pad)
+        file_frame.pack(fill="x", padx=16, pady=4)
         self.file_label = tk.Label(file_frame, text="No file selected",
                                    font=("Segoe UI", 9), fg=TEXT_DIM,
-                                   bg=PANEL_BG, anchor="w", wraplength=200)
+                                   bg=PANEL_BG, anchor="w", wraplength=230)
         self.file_label.pack(side="left", fill="x", expand=True)
         self._btn(file_frame, "Browse", self._browse_file, small=True).pack(side="right")
 
-        self.cols_label = tk.Label(sidebar, text="", wraplength=270,
-                                   font=("Segoe UI", 8), fg=TEXT_DIM,
-                                   bg=PANEL_BG, justify="left")
-        self.cols_label.pack(fill="x", padx=16, pady=(0, 4))
+        self.cols_detected_label = tk.Label(sidebar, text="",
+                                             font=("Segoe UI", 8), fg="#4ade80",
+                                             bg=PANEL_BG, anchor="w",
+                                             wraplength=310, justify="left")
+        self.cols_detected_label.pack(fill="x", padx=16, pady=(2, 10))
 
-        self._section_label(sidebar, "SETTINGS")
-        self._settings_frame = tk.Frame(sidebar, bg=PANEL_BG)
-        self._settings_frame.pack(fill="x", padx=16, pady=4)
-        self._build_settings_fields()
+        # ─────────────────────────────────────────────────────────────────
+        # STEP 2 — Map Columns to ERP Fields
+        # ─────────────────────────────────────────────────────────────────
+        self._step_header(sidebar, "2", "Map Columns → ERP Field Order")
+        tk.Label(sidebar,
+                 text="Select which column goes into each ERP field (in Tab order).",
+                 font=("Segoe UI", 8), fg=TEXT_DIM, bg=PANEL_BG,
+                 wraplength=310, justify="left").pack(fill="x", padx=16, pady=(0, 6))
 
-        cfg_frame = tk.Frame(sidebar, bg=PANEL_BG)
-        cfg_frame.pack(fill="x", padx=16, pady=8)
-        self._btn(cfg_frame, "Load Config", self._load_config_file, small=True).pack(side="left", padx=(0, 4))
-        self._btn(cfg_frame, "Save Config", self._save_config_file, small=True).pack(side="left")
+        self._mapper_frame = tk.Frame(sidebar, bg=PANEL_BG)
+        self._mapper_frame.pack(fill="x", padx=16, pady=2)
+        self._field_rows = []   # list of (label_var, col_var) tuples
+        self._build_field_mapper([])
 
-        self._section_label(sidebar, "CONTROLS")
+        mapper_btns = tk.Frame(sidebar, bg=PANEL_BG)
+        mapper_btns.pack(fill="x", padx=16, pady=4)
+        self._btn(mapper_btns, "+ Add Field", self._add_field_row, small=True).pack(side="left", padx=(0, 4))
+        self._btn(mapper_btns, "- Remove Last", self._remove_field_row, small=True).pack(side="left")
+
+        # ─────────────────────────────────────────────────────────────────
+        # STEP 3 — ERP Shortcuts & Run
+        # ─────────────────────────────────────────────────────────────────
+        self._step_header(sidebar, "3", "ERP Shortcuts")
+        sc_frame = tk.Frame(sidebar, bg=PANEL_BG)
+        sc_frame.pack(fill="x", padx=16, pady=4)
+
+        def _sc_row(parent, label, default, hint=""):
+            row = tk.Frame(parent, bg=PANEL_BG)
+            row.pack(fill="x", pady=3)
+            tk.Label(row, text=label, font=("Segoe UI", 9), fg=TEXT_DIM,
+                     bg=PANEL_BG, width=16, anchor="w").pack(side="left")
+            var = tk.StringVar(value=default)
+            tk.Entry(row, textvariable=var, font=("Consolas", 9),
+                     bg=ACCENT, fg=TEXT_PRIMARY, insertbackground=TEXT_PRIMARY,
+                     relief="flat", bd=4, width=10).pack(side="left")
+            if hint:
+                tk.Label(row, text=hint, font=("Segoe UI", 7), fg=TEXT_DIM,
+                         bg=PANEL_BG).pack(side="left", padx=4)
+            return var
+
+        self.shortcut_new   = _sc_row(sc_frame, "New Record:",  "ctrl+n", "(creates new entry)")
+        self.shortcut_save  = _sc_row(sc_frame, "Save Record:", "ctrl+s", "(saves each row)")
+        self.shortcut_delay = _sc_row(sc_frame, "Delay (sec):", "0.5",   "(pause between rows)")
+
+        # Run controls
         ctrl_frame = tk.Frame(sidebar, bg=PANEL_BG)
-        ctrl_frame.pack(fill="x", padx=16, pady=8)
-        self.wf_run_btn = self._btn(ctrl_frame, "▶  Run Workflow", self._run_workflow, color=SUCCESS)
+        ctrl_frame.pack(fill="x", padx=16, pady=10)
+        self.wf_run_btn = self._btn(ctrl_frame, "▶  Run — Start Entering Data", self._run_workflow, color=SUCCESS)
         self.wf_run_btn.pack(fill="x", pady=(0, 6))
         self.wf_stop_btn = self._btn(ctrl_frame, "■  Stop", self._stop_workflow, color=ERROR_COL)
         self.wf_stop_btn.pack(fill="x")
         self.wf_stop_btn.configure(state="disabled")
 
+        opts_frame = tk.Frame(sidebar, bg=PANEL_BG)
+        opts_frame.pack(fill="x", padx=16, pady=2)
         self.dry_run_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(sidebar, text="Dry run (validate only)",
+        tk.Checkbutton(opts_frame, text="Test run (validate only — don't type anything)",
                        variable=self.dry_run_var, font=("Segoe UI", 9),
                        fg=TEXT_DIM, bg=PANEL_BG, selectcolor=ACCENT,
                        activebackground=PANEL_BG, activeforeground=TEXT_PRIMARY
-                       ).pack(anchor="w", padx=16, pady=2)
+                       ).pack(anchor="w")
         self.resume_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(sidebar, text="Resume from last row",
+        tk.Checkbutton(opts_frame, text="Resume from last row (after a crash)",
                        variable=self.resume_var, font=("Segoe UI", 9),
                        fg=TEXT_DIM, bg=PANEL_BG, selectcolor=ACCENT,
                        activebackground=PANEL_BG, activeforeground=TEXT_PRIMARY
-                       ).pack(anchor="w", padx=16, pady=2)
+                       ).pack(anchor="w")
+
+        # Hidden compat vars (used by _collect_config and _run_workflow)
+        self.workflow_var = tk.StringVar(value="erp_data_entry")
+        self.cols_label = tk.Label(sidebar, text="", bg=PANEL_BG)
+        self._settings_frame = tk.Frame(sidebar, bg=PANEL_BG)
+        self._config_widgets = {}
 
         # Main log panel
         main = tk.Frame(panel, bg=DARK_BG)
@@ -521,7 +552,91 @@ class DesktopAgentApp:
 
         return panel
 
-    # ── Settings Fields ───────────────────────────────────────────────────────
+    # ── Step Header Helper ───────────────────────────────────────────────────────────────
+    def _step_header(self, parent, number, title):
+        """Render a numbered step header."""
+        frame = tk.Frame(parent, bg=ACCENT)
+        frame.pack(fill="x", pady=(8, 0))
+        if number:
+            tk.Label(frame, text=f" {number} ", font=("Consolas", 10, "bold"),
+                     fg="#4ade80", bg=ACCENT).pack(side="left", padx=(8, 4))
+        if title:
+            tk.Label(frame, text=title, font=("Segoe UI", 10, "bold"),
+                     fg=TEXT_PRIMARY, bg=ACCENT, pady=6).pack(side="left")
+
+    # ── Field Mapper ─────────────────────────────────────────────────────────────────
+    def _build_field_mapper(self, columns):
+        """Build the column-to-field mapping rows."""
+        for w in self._mapper_frame.winfo_children():
+            w.destroy()
+        self._field_rows = []
+
+        # Header row
+        hdr = tk.Frame(self._mapper_frame, bg=PANEL_BG)
+        hdr.pack(fill="x", pady=(0, 4))
+        tk.Label(hdr, text="ERP Field #", font=("Segoe UI", 8, "bold"),
+                 fg=TEXT_DIM, bg=PANEL_BG, width=10, anchor="w").pack(side="left")
+        tk.Label(hdr, text="Spreadsheet Column", font=("Segoe UI", 8, "bold"),
+                 fg=TEXT_DIM, bg=PANEL_BG).pack(side="left", padx=8)
+
+        # Default 4 rows matching common ERP fields
+        defaults = [
+            ("Field 1", columns[0] if len(columns) > 0 else ""),
+            ("Field 2", columns[1] if len(columns) > 1 else ""),
+            ("Field 3", columns[2] if len(columns) > 2 else ""),
+            ("Field 4", columns[3] if len(columns) > 3 else ""),
+        ]
+        for label, col in defaults:
+            self._add_field_row_with(label, col, columns)
+
+    def _add_field_row_with(self, label_text, col_value, columns=None):
+        """Add one mapping row with a given label and column value."""
+        i = len(self._field_rows) + 1
+        cols = columns or getattr(self, '_detected_columns', [])
+        row = tk.Frame(self._mapper_frame, bg=PANEL_BG)
+        row.pack(fill="x", pady=2)
+
+        label_var = tk.StringVar(value=label_text or f"Field {i}")
+        tk.Entry(row, textvariable=label_var, font=("Segoe UI", 8),
+                 bg="#1a2744", fg=TEXT_DIM, insertbackground=TEXT_PRIMARY,
+                 relief="flat", bd=3, width=9).pack(side="left")
+
+        col_var = tk.StringVar(value=col_value)
+        options = ["(skip)"] + cols if cols else ["(skip)"]
+        cb = ttk.Combobox(row, textvariable=col_var, values=options,
+                          state="readonly" if cols else "normal",
+                          font=("Segoe UI", 9), width=18)
+        cb.pack(side="left", padx=6)
+        self._field_rows.append((label_var, col_var))
+
+    def _add_field_row(self):
+        """Add a new empty mapping row."""
+        self._add_field_row_with(f"Field {len(self._field_rows)+1}", "")
+
+    def _remove_field_row(self):
+        """Remove the last mapping row."""
+        if not self._field_rows:
+            return
+        self._field_rows.pop()
+        children = self._mapper_frame.winfo_children()
+        if len(children) > 1:  # Keep header
+            children[-1].destroy()
+
+    def _update_mapper_columns(self, columns):
+        """Refresh all column dropdowns with newly detected columns."""
+        self._detected_columns = columns
+        for i, (label_var, col_var) in enumerate(self._field_rows):
+            # Find the combobox in the row frame
+            row_frame = self._mapper_frame.winfo_children()[i + 1]  # +1 for header
+            for widget in row_frame.winfo_children():
+                if isinstance(widget, ttk.Combobox):
+                    options = ["(skip)"] + columns
+                    widget.configure(values=options, state="readonly")
+                    # Auto-assign if column name matches
+                    if not col_var.get() and i < len(columns):
+                        col_var.set(columns[i])
+                    break
+    # ── Settings Fields (legacy — kept for _collect_config compat) ─────────────────────────
     _DEFAULT_SETTINGS = [
         ("entry_mode",          "Entry Mode",                    "tab"),
         ("app_path",            "App Path (optional)",           ""),
@@ -564,21 +679,35 @@ class DesktopAgentApp:
 
     # ── Workflow Events ───────────────────────────────────────────────────────
     def _on_workflow_change(self):
-        name = self.workflow_var.get()
-        info = self._workflow_registry.get(name)
-        if info:
-            self.workflow_desc.configure(text=info["description"])
-            cols = info["required_columns"]
-            self.cols_label.configure(text=f"Required columns: {', '.join(cols)}" if cols else "")
+        pass  # Workflow is now always erp_data_entry; no dropdown to update
 
     def _browse_file(self):
         path = filedialog.askopenfilename(
             title="Select Data File",
             filetypes=[("Spreadsheets", "*.xlsx *.xls *.csv"), ("All files", "*.*")])
-        if path:
-            self._data_file = path
-            self.file_label.configure(text=os.path.basename(path), fg=TEXT_PRIMARY)
-            self._set_status(f"File: {os.path.basename(path)}")
+        if not path:
+            return
+        self._data_file = path
+        self.file_label.configure(text=os.path.basename(path), fg=TEXT_PRIMARY)
+        self._set_status(f"File: {os.path.basename(path)}")
+        self._log(f"Data file: {path}", "INFO")
+
+        # Auto-detect columns and populate the field mapper
+        try:
+            import pandas as _pd
+            df = _pd.read_excel(path) if path.lower().endswith(('.xlsx','.xls','.xlsm')) \
+                 else _pd.read_csv(path)
+            columns = list(df.columns)
+            self._detected_columns = columns
+            col_str = "  •  ".join(columns[:8]) + (" ..." if len(columns) > 8 else "")
+            if hasattr(self, 'cols_detected_label'):
+                self.cols_detected_label.configure(
+                    text=f"✓ {len(columns)} columns detected: {col_str}")
+            if hasattr(self, '_mapper_frame'):
+                self._build_field_mapper(columns)
+            self._log(f"Columns detected: {columns}", "INFO")
+        except Exception as e:
+            self._log(f"Could not read columns: {e}", "WARNING")
 
     def _load_config_file(self):
         path = filedialog.askopenfilename(
@@ -611,19 +740,32 @@ class DesktopAgentApp:
             messagebox.showerror("Error", f"Could not save config:\n{e}")
 
     def _collect_config(self):
-        cfg = {}
-        for key, var in self._config_widgets.items():
-            val = var.get().strip()
-            if key == "field_order":
-                cfg[key] = [v.strip() for v in val.split(",") if v.strip()]
-            elif key == "max_retries":
-                try: cfg[key] = int(val)
-                except: cfg[key] = 2
-            elif key in ("inter_row_delay", "typing_interval"):
-                try: cfg[key] = float(val)
-                except: cfg[key] = 0.5
-            elif val:
-                cfg[key] = val
+        """Build config dict from the simple UI fields."""
+        cfg = {"entry_mode": "tab"}
+
+        # Keyboard shortcuts from Step 3
+        if hasattr(self, 'shortcut_new'):
+            cfg["new_record_shortcut"] = self.shortcut_new.get().strip() or "ctrl+n"
+        if hasattr(self, 'shortcut_save'):
+            cfg["save_shortcut"] = self.shortcut_save.get().strip() or "ctrl+s"
+        if hasattr(self, 'shortcut_delay'):
+            try:
+                cfg["inter_row_delay"] = float(self.shortcut_delay.get().strip())
+            except ValueError:
+                cfg["inter_row_delay"] = 0.5
+
+        # Field order from the mapper (Step 2)
+        if hasattr(self, '_field_rows') and self._field_rows:
+            field_order = []
+            for label_var, col_var in self._field_rows:
+                col = col_var.get().strip()
+                if col and col != "(skip)":
+                    field_order.append(col)
+            if field_order:
+                cfg["field_order"] = field_order
+
+        cfg["max_retries"] = 2
+        cfg["typing_interval"] = 0.03
         return cfg
 
     def _run_workflow(self):
@@ -634,11 +776,21 @@ class DesktopAgentApp:
                 "Please stop macro recording before running a workflow."
             )
             return
-        if self.workflow_var.get() not in self._workflow_registry:
-            messagebox.showerror("Error", "Please select a valid workflow.")
-            return
         if not self._data_file:
-            messagebox.showerror("Error", "Please select a data file first.")
+            messagebox.showerror("Step 1 incomplete",
+                "Please browse for your spreadsheet file first.")
+            return
+        if not hasattr(self, '_field_rows') or not any(
+            v.get().strip() and v.get().strip() != '(skip)'
+            for _, v in self._field_rows
+        ):
+            messagebox.showerror("Step 2 incomplete",
+                "Please map at least one column to an ERP field.")
+            return
+        # Always use erp_data_entry for the simple workflow runner
+        if "erp_data_entry" not in self._workflow_registry:
+            messagebox.showerror("Error",
+                "erp_data_entry workflow not found.\nCheck the workflows/ folder.")
             return
         self._wf_stop_event.clear()
         self.wf_run_btn.configure(state="disabled")
@@ -648,7 +800,7 @@ class DesktopAgentApp:
         self._log(f"Starting: {self.workflow_var.get()}", "INFO")
         self._wf_run_thread = threading.Thread(
             target=self._run_workflow_thread,
-            args=(self.workflow_var.get(), self._data_file,
+            args=("erp_data_entry", self._data_file,
                   self._collect_config(), self.dry_run_var.get(), self.resume_var.get()),
             daemon=True)
         self._wf_run_thread.start()
