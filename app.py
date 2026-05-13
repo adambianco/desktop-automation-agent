@@ -320,20 +320,77 @@ class DesktopAgentApp:
         self._settings_frame = tk.Frame(sidebar, bg=PANEL_BG)
         self._config_widgets = {}
 
-        # Main log panel
+        # Main right panel
         main = tk.Frame(panel, bg=DARK_BG)
         main.grid(row=0, column=1, sticky="nsew")
-        main.grid_rowconfigure(2, weight=1)
+        main.grid_rowconfigure(3, weight=1)
         main.grid_columnconfigure(0, weight=1)
 
         header = tk.Frame(main, bg=ACCENT, pady=10, padx=20)
         header.grid(row=0, column=0, sticky="ew")
-        tk.Label(header, text="Live Execution Log", font=("Segoe UI", 12, "bold"),
+        tk.Label(header, text="How It Works  —  Live Execution Log",
+                 font=("Segoe UI", 12, "bold"),
                  fg=TEXT_PRIMARY, bg=ACCENT).pack(side="left")
-        self._btn(header, "Clear", self._clear_log, small=True).pack(side="right")
+        self._btn(header, "Clear Log", self._clear_log, small=True).pack(side="right")
+
+        # ── Permanent guidance panel ──
+        guide = tk.Frame(main, bg="#0d1525", padx=0, pady=0)
+        guide.grid(row=1, column=0, sticky="ew", padx=8, pady=(8, 0))
+
+        # Title row
+        g_title = tk.Frame(guide, bg="#0d1525")
+        g_title.pack(fill="x", padx=14, pady=(10, 6))
+        tk.Label(g_title, text="⌨  How the agent enters data into your ERP",
+                 font=("Segoe UI", 10, "bold"), fg="#60a5fa", bg="#0d1525").pack(side="left")
+
+        # Tab flow diagram
+        flow_frame = tk.Frame(guide, bg="#0d1525")
+        flow_frame.pack(fill="x", padx=14, pady=(0, 8))
+
+        steps = [
+            ("Ctrl+N",  "Create new record",  "#f59e0b"),
+            ("Type",    "Field 1 value",       "#4ade80"),
+            ("Tab →",   "Move to Field 2",     "#60a5fa"),
+            ("Type",    "Field 2 value",       "#4ade80"),
+            ("Tab →",   "Move to Field 3",     "#60a5fa"),
+            ("Type",    "Field 3 value …",     "#4ade80"),
+            ("Ctrl+S",  "Save record",         "#f59e0b"),
+            ("↺",       "Repeat for next row", "#94a3b8"),
+        ]
+        for key, desc, color in steps:
+            step_row = tk.Frame(flow_frame, bg="#0d1525")
+            step_row.pack(side="left", padx=4)
+            tk.Label(step_row, text=key,
+                     font=("Consolas", 9, "bold"), fg=color,
+                     bg="#1a2744", padx=6, pady=3,
+                     relief="flat").pack()
+            tk.Label(step_row, text=desc,
+                     font=("Segoe UI", 7), fg="#475569",
+                     bg="#0d1525").pack()
+
+        # Key insight
+        insight_frame = tk.Frame(guide, bg="#111827")
+        insight_frame.pack(fill="x", padx=0, pady=0)
+        tk.Label(insight_frame,
+                 text="  ⚠  The agent does NOT see your ERP screen. "
+                      "You must open your ERP, go to the data entry screen, "
+                      "and click into the FIRST field before clicking Run.",
+                 font=("Segoe UI", 8, "bold"), fg="#f59e0b", bg="#111827",
+                 wraplength=550, justify="left", padx=14, pady=8,
+                 anchor="w").pack(fill="x")
+
+        # Mapping reminder
+        map_frame = tk.Frame(guide, bg="#0d1525")
+        map_frame.pack(fill="x", padx=14, pady=(6, 10))
+        tk.Label(map_frame,
+                 text="📌  Step 2 mapping = Tab order.  "
+                      "Field 1 = first Tab stop in your ERP.  "
+                      "Field 2 = second Tab stop.  And so on.",
+                 font=("Segoe UI", 8), fg="#94a3b8", bg="#0d1525",
+                 wraplength=550, justify="left", anchor="w").pack(fill="x")
 
         prog_frame = tk.Frame(main, bg=DARK_BG, pady=6, padx=16)
-        prog_frame.grid(row=1, column=0, sticky="ew")
+        prog_frame.grid(row=2, column=0, sticky="ew")
         prog_frame.grid_columnconfigure(1, weight=1)
         tk.Label(prog_frame, text="Progress:", font=("Segoe UI", 9),
                  fg=TEXT_DIM, bg=DARK_BG).grid(row=0, column=0, sticky="w", padx=(0, 8))
@@ -345,7 +402,7 @@ class DesktopAgentApp:
         self.progress_label.grid(row=0, column=2, padx=(8, 0))
 
         log_frame = tk.Frame(main, bg=LOG_BG)
-        log_frame.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0, 8))
+        log_frame.grid(row=3, column=0, sticky="nsew", padx=8, pady=(0, 8))
         log_frame.grid_rowconfigure(0, weight=1)
         log_frame.grid_columnconfigure(0, weight=1)
         self.log_text = tk.Text(log_frame, bg=LOG_BG, fg=TEXT_PRIMARY,
