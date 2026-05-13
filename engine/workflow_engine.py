@@ -124,14 +124,16 @@ class WorkflowEngine:
     #  Main Execution                                                      #
     # ------------------------------------------------------------------ #
 
-    def run(self, workflow_name: str,
+    def run(self,
+            workflow_name: str,
             data_file: str,
             config: Optional[Dict[str, Any]] = None,
             start_row: int = 0,
             end_row: Optional[int] = None,
             sheet: Any = 0,
             column_map: Optional[Dict[str, str]] = None,
-            dry_run: bool = False) -> "WorkflowSummary":
+            dry_run: bool = False,
+            stop_event=None) -> "WorkflowSummary":
         """
         Execute a workflow against a data file.
 
@@ -208,6 +210,11 @@ class WorkflowEngine:
 
         # Process rows
         for row in reader.iter_rows(start_row=start_row, end_row=end_row):
+            # Check stop signal before each row
+            if stop_event is not None and stop_event.is_set():
+                logger.info("Workflow stopped by user at row %d", row.get('_row_index', 0) + 1)
+                break
+
             row_idx = row.get("_row_index", 0)
             row_start = time.time()
 

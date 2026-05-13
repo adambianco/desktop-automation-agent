@@ -902,7 +902,8 @@ class DesktopAgentApp:
             engine.register_all_from_directory()
             start_row = engine.get_resume_row(workflow_name, data_file) if resume else 0
             summary = engine.run(workflow_name=workflow_name, data_file=data_file,
-                                 config=cfg, start_row=start_row, dry_run=dry_run)
+                                 config=cfg, start_row=start_row, dry_run=dry_run,
+                                 stop_event=self._wf_stop_event)
             context.close()
             msg = f"✓ Complete: {summary.succeeded}/{summary.total} rows ({summary.duration:.1f}s)"
             self._log(msg, "SUCCESS")
@@ -1440,6 +1441,14 @@ class DesktopAgentApp:
             done_callback=_done
         )
 
+    def _stop_workflow(self):
+        """Stop the running workflow immediately."""
+        self._wf_stop_event.set()
+        self.root.after(0, lambda: self.wf_stop_btn.configure(state="disabled"))
+        self.root.after(0, lambda: self.wf_run_btn.configure(state="normal"))
+        self._log("STOP requested by user — stopping after current row", "WARNING")
+        self._set_status("⏹ Stopping…")
+
     def _stop_playback(self):
         if self._macro_stop_event:
             self._macro_stop_event.set()
@@ -1520,6 +1529,9 @@ class DesktopAgentApp:
                 elif key == kb.Key.f6:
                     # F6: stop playback
                     self.root.after(0, self._hotkey_stop_play)
+                elif key == kb.Key.esc:
+                    # Escape: emergency stop — stop both workflow and playback
+                    self.root.after(0, self._hotkey_emergency_stop)
             except Exception:
                 pass
 
@@ -1546,6 +1558,13 @@ class DesktopAgentApp:
     def _hotkey_stop_play(self):
         """Called from main thread when F6 is pressed."""
         self._stop_playback()
+
+    def _hotkey_emergency_stop(self):
+        """Escape key — stop everything: workflow and macro playback."""
+        self._stop_workflow()
+        self._stop_playback()
+        self._log("Emergency stop (Escape)", "WARNING")
+        self._set_status("⚠ Emergency stop")
 
     # ── Close ─────────────────────────────────────────────────────────────────
     def _on_close(self):
