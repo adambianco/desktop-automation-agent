@@ -413,12 +413,29 @@ class DesktopAgentApp:
         tk.Label(repeat_row, text="times", font=("Segoe UI", 9),
                  fg=TEXT_DIM, bg=PANEL_BG).pack(side="left", padx=4)
 
+        # Loop until stopped
+        loop_row = tk.Frame(play_settings, bg=PANEL_BG)
+        loop_row.pack(fill="x", pady=4)
+        self.loop_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(loop_row, text="Loop until stopped  (F6 to stop)",
+                       variable=self.loop_var,
+                       font=("Segoe UI", 9), fg="#4ade80", bg=PANEL_BG,
+                       selectcolor=ACCENT, activebackground=PANEL_BG,
+                       activeforeground=TEXT_PRIMARY,
+                       command=self._on_loop_toggle).pack(anchor="w")
+
+        # Loop counter (shown during looping)
+        self.loop_count_var = tk.StringVar(value="")
+        self.loop_count_label = tk.Label(play_settings, textvariable=self.loop_count_var,
+                                          font=("Consolas", 9), fg="#4ade80", bg=PANEL_BG)
+        self.loop_count_label.pack(anchor="w", pady=(0, 2))
+
         play_ctrl = tk.Frame(left, bg=PANEL_BG)
         play_ctrl.pack(fill="x", padx=16, pady=8)
         self.play_btn = self._btn(play_ctrl, "▶  Play Macro", self._play_macro, color=SUCCESS)
         self.play_btn.pack(fill="x", pady=(0, 6))
         self.play_btn.configure(state="disabled")
-        self.stop_play_btn = self._btn(play_ctrl, "■  Stop Playback", self._stop_playback, color=ERROR_COL)
+        self.stop_play_btn = self._btn(play_ctrl, "■  Stop Playback  (F6)", self._stop_playback, color=ERROR_COL)
         self.stop_play_btn.pack(fill="x")
         self.stop_play_btn.configure(state="disabled")
 
@@ -926,6 +943,12 @@ class DesktopAgentApp:
             except Exception as e:
                 messagebox.showerror("Error", str(e))
 
+    def _on_loop_toggle(self):
+        """Grey out the Repeat field when loop mode is on."""
+        # The repeat entry is in play_settings — disable it when looping
+        looping = self.loop_var.get()
+        self.loop_count_var.set("" if not looping else "Loop mode active — press F6 to stop")
+
     def _play_macro(self):
         # Use current_macro if loaded, else use recorder's events
         macro_data = self._current_macro
@@ -939,26 +962,59 @@ class DesktopAgentApp:
             speed = float(self.speed_var.get())
         except ValueError:
             speed = 1.0
-        try:
-            repeat = max(1, int(self.repeat_var.get()))
-        except ValueError:
-            repeat = 1
+
+        loop_mode = self.loop_var.get()
+        if loop_mode:
+            repeat = None  # Infinite
+        else:
+            try:
+                repeat = max(1, int(self.repeat_var.get()))
+            except ValueError:
+                repeat = 1
 
         self._macro_stop_event = threading.Event()
+        self._loop_count = 0
+        self._loop_start_time = __import__('time').time()
         self.play_btn.configure(state="disabled")
         self.stop_play_btn.configure(state="normal")
-        self._set_status(f"Playing macro (speed={speed}x, repeat={repeat})…")
-        self._macro_log_append(f"Playing: {macro_data.get('name','?')} — speed={speed}x, repeat={repeat}", "info")
+
+        if loop_mode:
+            self._set_status(f"Looping macro (speed={speed}x) — F6 to stop")
+            self._macro_log_append(f"∞ Looping: {macro_data.get('name','?')} at {speed}x speed — press F6 to stop", "info")
+            self.loop_count_var.set("Loop 1 running…")
+        else:
+            self._set_status(f"Playing macro (speed={speed}x, repeat={repeat})…")
+            self._macro_log_append(f"Playing: {macro_data.get('name','?')} — speed={speed}x, repeat={repeat}", "info")
 
         from macro_player import MacroPlayer
         self._player = MacroPlayer()
 
         def _progress(current, total):
-            self.root.after(0, lambda: self._macro_log_append(
-                f"  Event {current}/{total}", "move") if current % 20 == 0 else None)
+            # Update loop counter display
+            if loop_mode and current == 1:
+                self._loop_count += 1
+                elapsed = __import__('time').time() - self._loop_start_time
+                msg = f"Loop {self._loop_count} running  ({elapsed:.0f}s elapsed)"
+                self.root.after(0, lambda m=msg: self.loop_count_var.set(m))
+                self.root.after(0, lambda m=msg: self._set_status(m))
 
         def _done(success):
-            msg = "✓ Macro complete" if success else "⏹ Macro stopped"
+            if loop_mode and not self._macro_stop_event.is_set():
+                # Restart immediately for next loop
+                self._macro_thread = self._player.play_in_thread(
+                    macro_data, speed=speed, repeat=1,
+                    stop_event=self._macro_stop_event,
+                    progress_callback=_progress,
+                    done_callback=_done
+                )
+                return
+            # Stopped or finished
+            if loop_mode:
+                elapsed = __import__('time').time() - self._loop_start_time
+                msg = f"⏹ Loop stopped after {self._loop_count} loops ({elapsed:.0f}s)"
+                self.root.after(0, lambda m=msg: self.loop_count_var.set(m))
+            else:
+                msg = "✓ Macro complete" if success else "⏹ Macro stopped"
             self.root.after(0, lambda: self._macro_log_append(msg, "success" if success else "info"))
             self.root.after(0, lambda: self._set_status(msg))
             self.root.after(0, lambda: (
@@ -969,7 +1025,7 @@ class DesktopAgentApp:
         self._macro_thread = self._player.play_in_thread(
             macro_data,
             speed=speed,
-            repeat=repeat,
+            repeat=1 if loop_mode else repeat,
             stop_event=self._macro_stop_event,
             progress_callback=_progress,
             done_callback=_done
@@ -980,6 +1036,9 @@ class DesktopAgentApp:
             self._macro_stop_event.set()
         self.stop_play_btn.configure(state="disabled")
         self._set_status("Stopping playback…")
+        # Clear loop counter when stopped
+        if hasattr(self, 'loop_count_var') and self.loop_var.get():
+            self.loop_count_var.set("Stopping…")
 
     # ── Log ───────────────────────────────────────────────────────────────────
     def _log(self, message, level="INFO"):
