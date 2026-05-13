@@ -655,6 +655,82 @@ class DesktopAgentApp:
         self.wf_stop_btn.configure(state="disabled")
 
     # ── Macro Events ──────────────────────────────────────────────────────────
+    def _show_recording_indicator(self):
+        """
+        Show a small always-on-top red dot in the bottom-right corner.
+        Pulses to show recording is active. Updates event count live.
+        Stays visible even when the main app is minimised.
+        """
+        if hasattr(self, '_rec_indicator') and self._rec_indicator:
+            return  # Already showing
+
+        ind = tk.Toplevel(self.root)
+        ind.overrideredirect(True)       # No title bar or borders
+        ind.attributes("-topmost", True) # Always on top of everything
+        ind.attributes("-alpha", 0.92)
+        ind.configure(bg="#0a0e1a")
+        ind.resizable(False, False)
+
+        # Position: bottom-right corner, 20px from edge
+        sw = ind.winfo_screenwidth()
+        sh = ind.winfo_screenheight()
+        w, h = 160, 48
+        ind.geometry(f"{w}x{h}+{sw - w - 20}+{sh - h - 60}")
+
+        # Red border frame
+        border = tk.Frame(ind, bg=RECORD_RED, padx=2, pady=2)
+        border.pack(fill="both", expand=True)
+        inner = tk.Frame(border, bg="#0a0e1a")
+        inner.pack(fill="both", expand=True)
+
+        content = tk.Frame(inner, bg="#0a0e1a")
+        content.pack(fill="both", expand=True, padx=6, pady=4)
+
+        # Red dot + REC label
+        left = tk.Frame(content, bg="#0a0e1a")
+        left.pack(side="left", fill="y")
+        self._dot_label = tk.Label(left, text="●", font=("Segoe UI", 14),
+                                    fg=RECORD_RED, bg="#0a0e1a")
+        self._dot_label.pack(side="left", padx=(0, 4))
+        tk.Label(left, text="REC", font=("Consolas", 9, "bold"),
+                 fg=RECORD_RED, bg="#0a0e1a").pack(side="left")
+
+        # Event count
+        self._ind_count_var = tk.StringVar(value="0 events")
+        tk.Label(content, textvariable=self._ind_count_var,
+                 font=("Consolas", 8), fg=TEXT_DIM, bg="#0a0e1a"
+                 ).pack(side="right")
+
+        self._rec_indicator = ind
+        self._dot_pulse_state = True
+        self._pulse_dot()
+
+    def _pulse_dot(self):
+        """Animate the red dot by toggling opacity."""
+        if not hasattr(self, '_rec_indicator') or not self._rec_indicator:
+            return
+        if not self._recording:
+            return
+        try:
+            self._dot_pulse_state = not self._dot_pulse_state
+            color = RECORD_RED if self._dot_pulse_state else "#5a0a0a"
+            self._dot_label.configure(fg=color)
+            # Update event count
+            count = self._recorder.event_count if self._recorder else 0
+            self._ind_count_var.set(f"{count} events")
+            self.root.after(600, self._pulse_dot)
+        except Exception:
+            pass
+
+    def _hide_recording_indicator(self):
+        """Remove the floating recording indicator."""
+        if hasattr(self, '_rec_indicator') and self._rec_indicator:
+            try:
+                self._rec_indicator.destroy()
+            except Exception:
+                pass
+            self._rec_indicator = None
+
     def _show_countdown(self, seconds: int, on_done: callable):
         """
         Show a large floating countdown overlay (3… 2… 1…) then call on_done.
@@ -734,6 +810,7 @@ class DesktopAgentApp:
             self._macro_log_append("Recording started — perform your task...", "info")
             self._set_status("Recording macro…")
             self.root.title("Desktop Automation Agent  ●  RECORDING (F10 to stop)")
+            self._show_recording_indicator()  # Show floating red dot
 
         self._show_countdown(3, _begin_recording)
 
@@ -749,6 +826,7 @@ class DesktopAgentApp:
         self.rec_status_label.configure(fg=TEXT_DIM)
         self._macro_log_append(f"Recording stopped — {count} events captured", "success")
         self._set_status(f"Recorded {count} events")
+        self._hide_recording_indicator()  # Remove floating red dot
         if count > 0:
             self.play_btn.configure(state="normal")
 
@@ -995,6 +1073,8 @@ class DesktopAgentApp:
                 self._hotkey_listener.stop()
             except Exception:
                 pass
+        # Remove floating indicator if visible
+        self._hide_recording_indicator()
         if self._recording:
             if not messagebox.askyesno("Quit", "Recording in progress. Stop and quit?"):
                 return
