@@ -84,7 +84,8 @@ class ERPDataEntryWorkflow(WorkflowBase):
 
     @property
     def required_columns(self) -> List[str]:
-        return ["invoice_number", "vendor_name", "invoice_date", "amount"]
+        # No required column names — the user maps any columns via the UI
+        return []
 
     # ------------------------------------------------------------------ #
     #  Lifecycle                                                           #
@@ -286,11 +287,9 @@ class ERPDataEntryWorkflow(WorkflowBase):
         for i, field_name in enumerate(field_order):
             value = row.get(field_name, "")
             if value is None or str(value).strip() == "" or str(value).lower() == "nan":
-                # Skip empty optional fields — just tab past them
-                if field_name not in self.required_columns:
-                    context.input.tab()
-                    continue
-                value = ""
+                # Empty field — just tab past it without typing
+                context.input.tab()
+                continue
 
             self.log_debug("Filling field '%s' = %r", field_name, str(value)[:30])
             context.type_into_field(value, clear_first=True)
