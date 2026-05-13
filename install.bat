@@ -1,5 +1,5 @@
 @echo off
-REM Desktop Automation Agent - Installer
-REM Launches the PowerShell installer (works on all Windows 10/11)
-
+REM Desktop Automation Agent — Installer
+REM Double-click this file to install and set up the app automatically.
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1"
+pause
