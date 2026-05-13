@@ -747,13 +747,15 @@ class DesktopAgentApp:
             pass
 
     def _hide_recording_indicator(self):
-        """Remove the floating recording indicator."""
+        """Remove the floating recording indicator — always via root.after() to avoid blocking."""
         if hasattr(self, '_rec_indicator') and self._rec_indicator:
+            ind = self._rec_indicator
+            self._rec_indicator = None
+            # Destroy via after() so we never block the main thread
             try:
-                self._rec_indicator.destroy()
+                self.root.after(0, ind.destroy)
             except Exception:
                 pass
-            self._rec_indicator = None
 
     def _show_countdown(self, seconds: int, on_done: callable):
         """
@@ -849,25 +851,30 @@ class DesktopAgentApp:
         if not self._recorder:
             return
 
-        # 1. Signal stop immediately — this is instant and non-blocking.
-        #    _recording=False stops new events being captured right away.
-        #    The actual listener.stop() calls happen in a background thread
-        #    inside recorder.stop(), so the GUI never freezes.
-        events = self._recorder.stop()   # Returns immediately
+        # Signal stop — returns immediately, listener cleanup happens in background thread
+        events = self._recorder.stop()
         self._recording = False
         count = len(events)
 
-        # 2. Update UI immediately
-        self.record_btn.configure(state="normal")
-        self.stop_rec_btn.configure(state="disabled", bg="#555")
-        self.rec_status_var.set(f"✓ Recorded {count} events — save it below")
-        self.rec_status_label.configure(fg=TEXT_DIM)
-        self._macro_log_append(f"Recording stopped — {count} events captured", "success")
-        self._set_status(f"Recorded {count} events")
-        self._hide_recording_indicator()
-        self.root.title("Desktop Automation Agent")
-        if count > 0:
-            self.play_btn.configure(state="normal")
+        # Defer ALL UI updates to the next event loop tick via after()
+        # This ensures nothing blocks even if tkinter is mid-render
+        def _update_ui():
+            try:
+                self.record_btn.configure(state="normal")
+                self.stop_rec_btn.configure(state="disabled", bg="#555")
+                self.rec_status_var.set(f"✓ Recorded {count} events — save it below")
+                self.rec_status_label.configure(fg=TEXT_DIM)
+                self._macro_log_append(f"Recording stopped — {count} events captured", "success")
+                self._set_status(f"Recorded {count} events")
+                self._hide_recording_indicator()
+                self.root.title("Desktop Automation Agent")
+                if count > 0:
+                    self.play_btn.configure(state="normal")
+            except Exception as e:
+                import logging
+                logging.error("_stop_recording UI update error: %s", e)
+
+        self.root.after(0, _update_ui)
 
     def _on_macro_event(self, event):
         """
