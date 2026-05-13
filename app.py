@@ -599,6 +599,13 @@ class DesktopAgentApp:
         return cfg
 
     def _run_workflow(self):
+        # Guard: don't run workflow while recording a macro
+        if self._recording:
+            messagebox.showwarning(
+                "Recording Active",
+                "Please stop macro recording before running a workflow."
+            )
+            return
         if self.workflow_var.get() not in self._workflow_registry:
             messagebox.showerror("Error", "Please select a valid workflow.")
             return
@@ -783,6 +790,13 @@ class DesktopAgentApp:
         overlay.after(1000, tick)
 
     def _start_recording(self):
+        # Guard: don't record while a workflow is running (they share mouse/keyboard)
+        if self._wf_run_thread and self._wf_run_thread.is_alive():
+            messagebox.showwarning(
+                "Workflow Running",
+                "Please stop the running workflow before starting a macro recording."
+            )
+            return
         try:
             from macro_recorder import MacroRecorder
         except ImportError:

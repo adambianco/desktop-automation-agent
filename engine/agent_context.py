@@ -30,9 +30,8 @@ class AgentContext:
         config:     Dict — workflow-specific configuration
         state:      Dict — mutable runtime state (shared across steps)
     """
-
     def __init__(self, config: Optional[Dict[str, Any]] = None,
-                 display: str = ":99",
+                 display: str = "",
                  template_dir: str = "templates",
                  log_dir: str = "logs",
                  debug_screenshots: bool = True):
@@ -41,12 +40,19 @@ class AgentContext:
 
         Args:
             config: Workflow configuration dictionary.
-            display: X display to use (headless: ":99", real: ":0").
+            display: X display string (Linux only: e.g. ":0" or ":99").
+                     Leave empty on Windows/macOS.
             template_dir: Directory containing UI template images.
             log_dir: Directory for logs and error screenshots.
             debug_screenshots: Whether to save screenshots on errors.
         """
-        os.environ["DISPLAY"] = display
+        # Set DISPLAY only on Linux (Xvfb / X11)
+        if not _IS_WINDOWS and display:
+            os.environ["DISPLAY"] = display
+        elif not _IS_WINDOWS and not display:
+            # Default to :0 on Linux if not specified
+            os.environ.setdefault("DISPLAY", ":0")
+
         self.config = config or {}
         self.state: Dict[str, Any] = {}
         self._debug_screenshots = debug_screenshots
