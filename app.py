@@ -723,7 +723,7 @@ class DesktopAgentApp:
         def _begin_recording():
             self._recorder = MacroRecorder(
                 record_mouse_move=True,
-                mouse_move_throttle_ms=80,
+                mouse_move_throttle_ms=100,  # Throttle moves to max 10/sec
                 on_event=self._on_macro_event
             )
             self._recorder.start()
@@ -753,26 +753,27 @@ class DesktopAgentApp:
             self.play_btn.configure(state="normal")
 
     def _on_macro_event(self, event):
-        """Called from recorder thread for each event — update log safely."""
+        """
+        Called from the pynput recorder thread for each event.
+        IMPORTANT: Never call tkinter directly here — always use root.after().
+        Mouse move events are NOT logged (too frequent) to avoid flooding the queue.
+        """
         etype = event.get("type", "")
         t = event.get("time", 0)
+
+        # Only log clicks and key presses — skip mouse_move to prevent GUI flooding
         if etype == "mouse_click" and event.get("pressed"):
             msg = f"[{t:.2f}s] Click {event.get('button','left')} at ({event['x']}, {event['y']})"
             self.root.after(0, lambda m=msg: self._macro_log_append(m, "click"))
         elif etype == "key_press":
             key = event.get("key", "")
-            if len(key) == 1:
-                msg = f"[{t:.2f}s] Type: {key!r}"
-            else:
-                msg = f"[{t:.2f}s] Key: {key}"
+            msg = f"[{t:.2f}s] Type: {key!r}" if len(key) == 1 else f"[{t:.2f}s] Key: {key}"
             self.root.after(0, lambda m=msg: self._macro_log_append(m, "key"))
-        elif etype == "mouse_move":
-            msg = f"[{t:.2f}s] Move → ({event['x']}, {event['y']})"
-            self.root.after(0, lambda m=msg: self._macro_log_append(m, "move"))
 
-        # Update event count
+        # Update event count only every 5 events to reduce GUI load
         count = self._recorder.event_count if self._recorder else 0
-        self.root.after(0, lambda c=count: self.rec_status_var.set(f"● RECORDING — {c} events"))
+        if count % 5 == 0 or etype in ("mouse_click", "key_press"):
+            self.root.after(0, lambda c=count: self.rec_status_var.set(f"● RECORDING — {c} events"))
 
     def _save_macro(self):
         if not self._recorder or not self._recorder._events:

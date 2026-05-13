@@ -91,15 +91,19 @@ class MacroRecorder:
             self._recording = True
             self._last_move_time = 0.0
 
-        # Start listeners
+        # Start listeners in daemon threads so they never block the GUI.
+        # suppress=False means events still reach the target application.
         self._mouse_listener = mouse.Listener(
             on_move=self._on_move,
             on_click=self._on_click,
-            on_scroll=self._on_scroll
+            on_scroll=self._on_scroll,
+            daemon=True
         )
         self._keyboard_listener = keyboard.Listener(
             on_press=self._on_key_press,
-            on_release=self._on_key_release
+            on_release=self._on_key_release,
+            suppress=False,   # Don't consume keystrokes — let them reach the app
+            daemon=True
         )
         self._mouse_listener.start()
         self._keyboard_listener.start()
