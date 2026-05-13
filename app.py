@@ -368,7 +368,18 @@ class DesktopAgentApp:
                  font=("Segoe UI", 9), bg=ACCENT, fg=TEXT_PRIMARY,
                  insertbackground=TEXT_PRIMARY, relief="flat", bd=4
                  ).pack(side="left", fill="x", expand=True, padx=(6, 0))
-        self._btn(left, "💾  Save Macro", self._save_macro, small=True).pack(fill="x", padx=16, pady=4)
+        save_btn_row = tk.Frame(left, bg=PANEL_BG)
+        save_btn_row.pack(fill="x", padx=16, pady=4)
+        self._btn(save_btn_row, "💾  Save Macro", self._save_macro, small=True).pack(side="left", fill="x", expand=True, padx=(0, 4))
+        self._btn(save_btn_row, "📁  Open Folder", self._open_macros_folder, small=True).pack(side="left")
+
+        # Save path label
+        from macro_recorder import MacroRecorder as _MR
+        self._macros_dir = _MR.MACROS_DIR
+        short_path = self._macros_dir.replace(os.path.expanduser("~"), "~")
+        tk.Label(left, text=f"Saves to: {short_path}",
+                 font=("Segoe UI", 7), fg=TEXT_DIM, bg=PANEL_BG,
+                 anchor="w", wraplength=270).pack(fill="x", padx=16, pady=(0, 6))
 
         # Saved macros list
         self._section_label(left, "SAVED MACROS")
@@ -1001,10 +1012,37 @@ class DesktopAgentApp:
         if count % 5 == 0 or etype in ("mouse_click", "key_press"):
             self.root.after(0, lambda c=count: self.rec_status_var.set(f"● RECORDING — {c} events"))
 
+    def _open_macros_folder(self):
+        """Open the macros folder in Windows Explorer."""
+        import subprocess, sys
+        folder = getattr(self, '_macros_dir', None)
+        if not folder:
+            from macro_recorder import MacroRecorder
+            folder = MacroRecorder.MACROS_DIR
+        os.makedirs(folder, exist_ok=True)
+        if sys.platform == 'win32':
+            subprocess.Popen(['explorer', folder])
+        else:
+            subprocess.Popen(['xdg-open', folder])
+        self._set_status(f"Opened: {folder}")
+
     def _save_macro(self):
         events = getattr(self, '_last_recorded_events', None)
+
+        # If no events yet, try reading from the output file directly
+        # (handles case where user clicks Save before _finish thread completes)
+        if not events and hasattr(self, '_rec_output_file') and os.path.exists(self._rec_output_file):
+            try:
+                import json as _json
+                with open(self._rec_output_file) as f:
+                    events = _json.load(f)
+                self._last_recorded_events = events
+            except Exception:
+                pass
+
         if not events:
-            messagebox.showwarning("Nothing to save", "Record a macro first.")
+            messagebox.showwarning("Nothing to save",
+                "No recorded events found.\n\nMake sure you:\n1. Clicked Record (or pressed F9)\n2. Performed your task\n3. Clicked Stop (or pressed F10)\n4. Waited for 'Recorded X events' to appear")
             return
         name = self.macro_name_var.get().strip()
         if not name:
@@ -1024,7 +1062,7 @@ class DesktopAgentApp:
         }
         with open(path, "w") as f:
             _json.dump(data, f, indent=2)
-        self._macro_log_append(f"Macro saved: {os.path.basename(path)}", "success")
+        self._macro_log_append(f"Macro saved: {path}", "success")
         self._set_status(f"Macro saved: {name}")
         self._refresh_macro_list()
 
