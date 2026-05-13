@@ -848,16 +848,24 @@ class DesktopAgentApp:
     def _stop_recording(self):
         if not self._recorder:
             return
-        events = self._recorder.stop()
+
+        # 1. Signal stop immediately — this is instant and non-blocking.
+        #    _recording=False stops new events being captured right away.
+        #    The actual listener.stop() calls happen in a background thread
+        #    inside recorder.stop(), so the GUI never freezes.
+        events = self._recorder.stop()   # Returns immediately
         self._recording = False
         count = len(events)
+
+        # 2. Update UI immediately
         self.record_btn.configure(state="normal")
         self.stop_rec_btn.configure(state="disabled", bg="#555")
         self.rec_status_var.set(f"✓ Recorded {count} events — save it below")
         self.rec_status_label.configure(fg=TEXT_DIM)
         self._macro_log_append(f"Recording stopped — {count} events captured", "success")
         self._set_status(f"Recorded {count} events")
-        self._hide_recording_indicator()  # Remove floating red dot
+        self._hide_recording_indicator()
+        self.root.title("Desktop Automation Agent")
         if count > 0:
             self.play_btn.configure(state="normal")
 

@@ -110,19 +110,42 @@ class MacroRecorder:
         logger.info("Macro recording started")
 
     def stop(self) -> List[Dict[str, Any]]:
-        """Stop recording and return the list of recorded events."""
+        """
+        Stop recording and return the list of recorded events.
+
+        IMPORTANT: listener.stop() blocks on Windows when called from the main
+        thread. We signal _recording=False immediately (so no more events are
+        captured) and then stop the listeners in a background daemon thread so
+        the caller (tkinter main thread) is never blocked.
+        """
         with self._lock:
             self._recording = False
 
-        if self._mouse_listener:
-            self._mouse_listener.stop()
-            self._mouse_listener = None
-        if self._keyboard_listener:
-            self._keyboard_listener.stop()
-            self._keyboard_listener = None
+        events_snapshot = list(self._events)
+        logger.info("Macro recording stopped — %d events captured", len(events_snapshot))
 
-        logger.info("Macro recording stopped — %d events captured", len(self._events))
-        return list(self._events)
+        # Stop listeners in a background thread to avoid blocking the GUI
+        ml = self._mouse_listener
+        kl = self._keyboard_listener
+        self._mouse_listener = None
+        self._keyboard_listener = None
+
+        def _stop_listeners():
+            try:
+                if ml:
+                    ml.stop()
+            except Exception:
+                pass
+            try:
+                if kl:
+                    kl.stop()
+            except Exception:
+                pass
+
+        t = threading.Thread(target=_stop_listeners, daemon=True)
+        t.start()
+
+        return events_snapshot
 
     def save(self, name: str) -> str:
         """
