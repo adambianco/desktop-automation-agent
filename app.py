@@ -239,8 +239,19 @@ class DesktopAgentApp:
         # STEP 2 — Map Columns to ERP Fields
         # ─────────────────────────────────────────────────────────────────
         self._step_header(sidebar, "2", "Map Columns → ERP Field Order")
+        # How it works explanation
+        how_frame = tk.Frame(sidebar, bg="#0f1a2e", padx=10, pady=8)
+        how_frame.pack(fill="x", padx=16, pady=(4, 6))
+        tk.Label(how_frame,
+                 text="ℹ  How it works:",
+                 font=("Segoe UI", 8, "bold"), fg="#60a5fa", bg="#0f1a2e",
+                 anchor="w").pack(fill="x")
+        tk.Label(how_frame,
+                 text="The agent opens your ERP, presses Ctrl+N for a new record, then types each value and presses Tab to move to the next field — exactly like you do manually.",
+                 font=("Segoe UI", 8), fg=TEXT_DIM, bg="#0f1a2e",
+                 wraplength=290, justify="left").pack(fill="x", pady=(2, 0))
         tk.Label(sidebar,
-                 text="Select which column goes into each ERP field (in Tab order).",
+                 text="Match each field below to your spreadsheet column, in the order the cursor moves when you press Tab in your ERP:",
                  font=("Segoe UI", 8), fg=TEXT_DIM, bg=PANEL_BG,
                  wraplength=310, justify="left").pack(fill="x", padx=16, pady=(0, 6))
 
@@ -792,12 +803,32 @@ class DesktopAgentApp:
             messagebox.showerror("Error",
                 "erp_data_entry workflow not found.\nCheck the workflows/ folder.")
             return
+        # Pre-run checklist — remind user what to do before the agent starts
+        ready = messagebox.askokcancel(
+            "Ready to run?",
+            "Before clicking OK, make sure:\n\n"
+            "  1️⃣  Your ERP is open on screen\n"
+            "  2️⃣  You are on the data entry screen\n"
+            "  3️⃣  Click into the FIRST field in your ERP\n"
+            "       (the agent will start typing there)\n\n"
+            "The agent will:\n"
+            "  •  Press Ctrl+N to create a new record\n"
+            "  •  Type each value and press Tab\n"
+            "  •  Press Ctrl+S to save\n"
+            "  •  Repeat for every row in your spreadsheet\n\n"
+            "Do NOT touch the mouse or keyboard while it runs.\n"
+            "Move mouse to top-left corner to emergency stop.",
+            icon="question"
+        )
+        if not ready:
+            return
+
         self._wf_stop_event.clear()
         self.wf_run_btn.configure(state="disabled")
         self.wf_stop_btn.configure(state="normal")
         self.progress_var.set(0)
         self._set_status("Running workflow…")
-        self._log(f"Starting: {self.workflow_var.get()}", "INFO")
+        self._log(f"Starting: erp_data_entry", "INFO")
         self._wf_run_thread = threading.Thread(
             target=self._run_workflow_thread,
             args=("erp_data_entry", self._data_file,

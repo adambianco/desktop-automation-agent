@@ -10,10 +10,14 @@ and ensures consistent configuration across the entire platform.
 """
 
 import os
+import sys
 import logging
 from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
+
+# Platform detection — used throughout this module
+_IS_WINDOWS = sys.platform == "win32"
 
 
 class AgentContext:
